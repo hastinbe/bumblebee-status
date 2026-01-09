@@ -13,7 +13,6 @@ def read_module(filename):
     with open("requirements/modules/{}.txt".format(filename)) as fname:
         return [rline for rline in fname.read().split("\n") if rline]
 
-
 EXTRAS_REQUIREMENTS_MAP = {
     "battery-upower": read_module("battery_upower_reqs"),
     "cpu": read_module("cpu"),
@@ -39,6 +38,7 @@ EXTRAS_REQUIREMENTS_MAP = {
     "traffic": read_module("traffic"),
     "weather": read_module("weather"),
     "yubikey": read_module("yubikey"),
+    "toml": ["toml"],
 }
 
 import glob
