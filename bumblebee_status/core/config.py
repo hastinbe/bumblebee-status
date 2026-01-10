@@ -169,6 +169,12 @@ class Config(util.store.Store):
             help="Specify a TOML configuration file to use"
         )
         parser.add_argument(
+            "--profile",
+            action="store",
+            default=None,
+            help="Select a profile from the TOML configuration file"
+        )
+        parser.add_argument(
             "-m", "--modules", nargs="+", action="append", default=[], help=MODULE_HELP
         )
         parser.add_argument(
@@ -228,6 +234,12 @@ class Config(util.store.Store):
         self.__toml_modules = []
         self.__toml_theme = None
         self.__toml_debug = None
+        self.__toml_data = None  # Store raw TOML data for profile resolution
+
+        # Validate --profile requires --config
+        if self.__args.profile and not self.__args.config:
+            log.error("--profile requires --config to be specified")
+            raise SystemExit("--profile requires --config to be specified")
 
         # Load TOML config if --config is provided
         if self.__args.config:
@@ -265,57 +277,22 @@ class Config(util.store.Store):
             key, value = param.split("=", 1)
             self.set(key, value)
 
-    """Loads and validates a TOML configuration file
+    def normalize_modules(self, modules_toml):
+        """Normalize TOML modules array to internal format
 
-    :param filename: path to the TOML file to load
-    :raises SystemExit: if TOML parsing fails or validation errors occur
-    """
-    def load_toml_config(self, filename):
-        if not _toml_available:
-            log.error("TOML support requires the 'toml' package. Install it with: pip install toml")
-            raise SystemExit("TOML support requires the 'toml' package. Install it with: pip install toml")
-
-        try:
-            with open(filename, 'r') as f:
-                data = toml.load(f)
-        except Exception as e:
-            log.error("Failed to parse TOML config file {}: {}".format(filename, e))
-            raise SystemExit("Failed to parse TOML config file {}: {}".format(filename, e))
-
-        if "theme" in data:
-            self.__toml_theme = data["theme"]
-
-        if "interval" in data:
-            self.set("interval", str(data["interval"]))
-
-        if "debug" in data:
-            if isinstance(data["debug"], bool):
-                self.__toml_debug = data["debug"]
-            else:
-                log.warning("'debug' in TOML config must be a boolean, ignoring")
-
-        if "autohide" in data:
-            if isinstance(data["autohide"], list):
-                # Store as comma-separated string to match legacy format
-                autohide_list = [str(m) for m in data["autohide"]]
-                self.set("autohide", ",".join(autohide_list))
-            else:
-                log.warning("'autohide' in TOML config must be an array, ignoring")
-
-        if "modules" not in data:
-            log.warning("No 'modules' section found in TOML config")
-            return
-
-        if not isinstance(data["modules"], list):
+        :param modules_toml: List of module dicts from TOML
+        :return: List of normalized module dicts
+        :raises SystemExit: if validation fails
+        """
+        if not isinstance(modules_toml, list):
             log.error("'modules' must be an array of tables in TOML config")
             raise SystemExit("'modules' must be an array of tables in TOML config")
 
-        # Track module identifiers to detect duplicates
         module_ids = {}
-        module_name_counts = {}  # Track how many times each module name appears
+        module_name_counts = {}
         modules_list = []
 
-        for idx, module_entry in enumerate(data["modules"]):
+        for idx, module_entry in enumerate(modules_toml):
             if not isinstance(module_entry, dict):
                 log.error("Module entry at index {} must be a table".format(idx))
                 raise SystemExit("Module entry at index {} must be a table".format(idx))
@@ -365,15 +342,163 @@ class Config(util.store.Store):
                 "params": params
             })
 
-            # Apply parameters to config store
-            param_prefix = alias if alias else module_name
-            for key, value in params.items():
-                config_key = "{}.{}".format(param_prefix, key)
-                # Convert value to string to match existing behavior
-                self.set(config_key, str(value))
+        return modules_list
 
-        self.__toml_modules = modules_list
-        log.info("Loaded {} modules from TOML config".format(len(modules_list)))
+    def resolve_profile(self, config_data, profile_name):
+        """Resolve a profile with extends chain resolution and cycle detection
+
+        :param config_data: Full TOML config data
+        :param profile_name: Name of profile to resolve
+        :return: Resolved config dict (base + profile merged)
+        :raises SystemExit: if profile not found, cycle detected, or extends reference invalid
+        """
+        if "profiles" not in config_data:
+            log.error("No profiles defined in config file")
+            raise SystemExit("No profiles defined in config file")
+
+        profiles = config_data["profiles"]
+        if not isinstance(profiles, dict):
+            log.error("'profiles' must be a table in TOML config")
+            raise SystemExit("'profiles' must be a table in TOML config")
+
+        if profile_name not in profiles:
+            available = ", ".join(sorted(profiles.keys()))
+            log.error("Profile '{}' not found. Available profiles: {}".format(profile_name, available))
+            raise SystemExit("Profile '{}' not found. Available profiles: {}".format(profile_name, available))
+
+        # Resolve extends chain with cycle detection
+        visited = []
+        current = profile_name
+        chain = []
+
+        while current:
+            if current in visited:
+                cycle = " -> ".join(visited[visited.index(current):] + [current])
+                log.error("Cycle detected in profile extends chain: {}".format(cycle))
+                raise SystemExit("Cycle detected in profile extends chain: {}".format(cycle))
+
+            if current not in profiles:
+                log.error("Profile '{}' extends '{}' which does not exist".format(chain[-1] if chain else profile_name, current))
+                raise SystemExit("Profile '{}' extends '{}' which does not exist".format(chain[-1] if chain else profile_name, current))
+
+            visited.append(current)
+            chain.append(current)
+
+            profile_data = profiles[current]
+            if not isinstance(profile_data, dict):
+                log.error("Profile '{}' must be a table".format(current))
+                raise SystemExit("Profile '{}' must be a table".format(current))
+
+            extends = profile_data.get("extends", None)
+            if extends:
+                if not isinstance(extends, str):
+                    log.error("Profile '{}' has invalid 'extends' (must be a string)".format(current))
+                    raise SystemExit("Profile '{}' has invalid 'extends' (must be a string)".format(current))
+                current = extends
+            else:
+                current = None
+
+        # Build resolved config: base + parent → child
+        resolved = {}
+
+        # Start with base config
+        if "theme" in config_data:
+            resolved["theme"] = config_data["theme"]
+        if "modules" in config_data:
+            resolved["modules"] = config_data["modules"]
+        if "interval" in config_data:
+            resolved["interval"] = config_data["interval"]
+        if "debug" in config_data:
+            resolved["debug"] = config_data["debug"]
+        if "autohide" in config_data:
+            resolved["autohide"] = config_data["autohide"]
+
+        # Apply profiles in order (parent → child)
+        # Chain is built as [child, parent, grandparent...], so reverse it
+        for profile_name_in_chain in reversed(chain):
+            profile_data = profiles[profile_name_in_chain]
+
+            # Overlay scalar settings (child wins)
+            if "theme" in profile_data:
+                resolved["theme"] = profile_data["theme"]
+            if "interval" in profile_data:
+                resolved["interval"] = profile_data["interval"]
+            if "debug" in profile_data:
+                resolved["debug"] = profile_data["debug"]
+            if "autohide" in profile_data:
+                resolved["autohide"] = profile_data["autohide"]
+
+            # Modules: if profile defines modules, replace entirely (not merge)
+            if "modules" in profile_data:
+                resolved["modules"] = profile_data["modules"]
+
+        return resolved
+
+    """Loads and validates a TOML configuration file
+
+    :param filename: path to the TOML file to load
+    :raises SystemExit: if TOML parsing fails or validation errors occur
+    """
+    def load_toml_config(self, filename):
+        if not _toml_available:
+            log.error("TOML support requires the 'toml' package. Install it with: pip install toml")
+            raise SystemExit("TOML support requires the 'toml' package. Install it with: pip install toml")
+
+        try:
+            with open(filename, 'r') as f:
+                data = toml.load(f)
+        except Exception as e:
+            log.error("Failed to parse TOML config file {}: {}".format(filename, e))
+            raise SystemExit("Failed to parse TOML config file {}: {}".format(filename, e))
+
+        # Store raw data for profile resolution
+        self.__toml_data = data
+
+        # Resolve config: base or base + profile
+        if self.__args.profile:
+            resolved_config = self.resolve_profile(data, self.__args.profile)
+            log.info("Using profile '{}' from TOML config".format(self.__args.profile))
+        else:
+            resolved_config = data
+
+        # Extract theme
+        if "theme" in resolved_config:
+            self.__toml_theme = resolved_config["theme"]
+
+        # Extract interval
+        if "interval" in resolved_config:
+            self.set("interval", str(resolved_config["interval"]))
+
+        # Extract debug
+        if "debug" in resolved_config:
+            if isinstance(resolved_config["debug"], bool):
+                self.__toml_debug = resolved_config["debug"]
+            else:
+                log.warning("'debug' in TOML config must be a boolean, ignoring")
+
+        # Extract autohide
+        if "autohide" in resolved_config:
+            if isinstance(resolved_config["autohide"], list):
+                autohide_list = [str(m) for m in resolved_config["autohide"]]
+                self.set("autohide", ",".join(autohide_list))
+            else:
+                log.warning("'autohide' in TOML config must be an array, ignoring")
+
+        # Extract and normalize modules
+        if "modules" in resolved_config:
+            modules_list = self.normalize_modules(resolved_config["modules"])
+
+            # Apply parameters to config store
+            for module_def in modules_list:
+                param_prefix = module_def["alias"] if module_def["alias"] else module_def["name"]
+                for key, value in module_def["params"].items():
+                    config_key = "{}.{}".format(param_prefix, key)
+                    self.set(config_key, str(value))
+
+            self.__toml_modules = modules_list
+            log.info("Loaded {} modules from TOML config".format(len(modules_list)))
+        else:
+            log.warning("No 'modules' section found in TOML config")
 
     """Loads parameters from an init-style configuration file
 
