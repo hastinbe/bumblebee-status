@@ -21,4 +21,11 @@ def test_get_does_not_mutate_internal_used_flag():
     assert s._data["key"]["used"] == False
 
 
+def test_overwrite_set():
+    s = util.store.Store()
+    s.set("key", "value 1")
+    s.set("key", "value 2")
+    assert s.get("key") == "value 2"
+
+
 # vim: tabstop=8 expandtab shiftwidth=4 softtabstop=4
