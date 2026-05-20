@@ -63,6 +63,7 @@ class Theme(object):
         self.__current = {}
         self.__keywords = {}
         self.__value_idx = {}
+        self.__resolved = {}
         self.__data = raw_data if raw_data else self.load(name)
 
         for icons in self.__data.get("icons", []):
@@ -133,12 +134,28 @@ class Theme(object):
         self.__previous = dict(self.__current)
         self.__current.clear()
 
+    def invalidate_widget(self, widget):
+        keys_to_delete = [k for k in self.__resolved if k[0] == widget.id]
+        for k in keys_to_delete:
+            del self.__resolved[k]
+
     def get(self, key, widget=None, default=None):
         if not widget:
             widget = core.widget.Widget("")
         # special handling
         if widget == "previous":
             return self.__previous.get(key, None)
+
+        state = widget._state_cache if hasattr(widget, '_state_cache') else widget.state()
+        cache_key = (widget.id, frozenset(state), self.__widget_count)
+
+        # Return cached value if available (list values are excluded — they cycle per-tick)
+        if cache_key in self.__resolved:
+            cached_entry = self.__resolved[cache_key]
+            if key in cached_entry:
+                value = cached_entry[key]
+                self.__current[key] = value
+                return value
 
         value = default
 
@@ -162,7 +179,6 @@ class Theme(object):
                 value, self.get(widget.module.id, None, {}).get(key, value), key
             )
 
-        state = widget._state_cache if hasattr(widget, '_state_cache') else widget.state()
         if not key in state:
             for widget_state_item in state:
                 theme = self.get(widget_state_item, widget, {})
@@ -176,6 +192,12 @@ class Theme(object):
             self.__value_idx["{}::{}".format(widget.id, key)] = idx
             widget.set(key, idx)
             value = value[idx]
+        else:
+            # Store in cache (non-list values only)
+            if cache_key not in self.__resolved:
+                self.__resolved[cache_key] = {}
+            self.__resolved[cache_key][key] = value
+
         self.__current[key] = value
         return value
 

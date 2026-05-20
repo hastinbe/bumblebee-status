@@ -1,5 +1,6 @@
 import pytest
 import types
+from unittest.mock import MagicMock
 
 import core.theme
 import core.event
@@ -189,6 +190,59 @@ def test_overlay(overlayTheme):
     widget.state = types.MethodType(lambda self: ["load"], widget)
 
     assert theme.get("prefix", widget) == overlayTheme[module.name]["load"]["prefix"]
+
+
+def _make_mock_widget(widget_id="test-widget", states=None):
+    w = MagicMock(spec=[])
+    w.id = widget_id
+    w.module = None
+    w.state = MagicMock(return_value=states if states is not None else [])
+    # Ensure _state_cache is not present so widget.state() is called
+    return w
+
+
+def test_cache_hit_returns_same_value():
+    """Cache hit: second call returns cached value without traversing cascade."""
+    theme = core.theme.Theme(raw_data={"defaults": {"fg": "#aabbcc"}})
+    widget = _make_mock_widget(widget_id="w1", states=[])
+
+    result1 = theme.get("fg", widget)
+    result2 = theme.get("fg", widget)
+
+    assert result1 == "#aabbcc"
+    assert result2 == "#aabbcc"
+    # widget.id appears in the resolved cache
+    assert any(k[0] == "w1" for k in theme._Theme__resolved)
+
+
+def test_cache_different_states_produce_different_entries():
+    """Different states on the same widget id produce separate cached entries."""
+    theme = core.theme.Theme(
+        raw_data={"defaults": {"fg": "#aabbcc"}, "warning": {"fg": "#ff0000"}}
+    )
+    widget_normal = _make_mock_widget(widget_id="w2", states=[])
+    widget_warning = _make_mock_widget(widget_id="w2", states=["warning"])
+
+    result_normal = theme.get("fg", widget_normal)
+    result_warning = theme.get("fg", widget_warning)
+
+    assert result_normal == "#aabbcc"
+    assert result_warning == "#ff0000"
+    # Two distinct cache keys for the same widget id
+    keys_for_w2 = [k for k in theme._Theme__resolved if k[0] == "w2"]
+    assert len(keys_for_w2) == 2
+
+
+def test_invalidate_widget_removes_cache_entries():
+    """invalidate_widget evicts all cached entries for the given widget."""
+    theme = core.theme.Theme(raw_data={"defaults": {"fg": "#aabbcc"}})
+    widget = _make_mock_widget(widget_id="w3", states=[])
+
+    theme.get("fg", widget)
+    assert any(k[0] == "w3" for k in theme._Theme__resolved)
+
+    theme.invalidate_widget(widget)
+    assert not any(k[0] == "w3" for k in theme._Theme__resolved)
 
 
 # vim: tabstop=8 expandtab shiftwidth=4 softtabstop=4
