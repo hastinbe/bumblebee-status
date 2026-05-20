@@ -257,7 +257,7 @@ def test_invalidate_widget_removes_cache_entries():
     theme.get("fg", widget)
     assert any(k[0] == "w3" for k in theme._Theme__resolved)
 
-    theme.invalidate_widget(widget)
+    theme.invalidate_widget(widget.id)
     assert not any(k[0] == "w3" for k in theme._Theme__resolved)
 
 

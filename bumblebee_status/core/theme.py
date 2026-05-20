@@ -134,8 +134,8 @@ class Theme(object):
         self.__previous = dict(self.__current)
         self.__current.clear()
 
-    def invalidate_widget(self, widget):
-        keys_to_delete = [k for k in self.__resolved if k[0] == widget.id]
+    def invalidate_widget(self, widget_id):
+        keys_to_delete = [k for k in self.__resolved if k[0] == widget_id]
         for k in keys_to_delete:
             del self.__resolved[k]
 
