@@ -140,6 +140,7 @@ class Theme(object):
             del self.__resolved[k]
 
     def get(self, key, widget=None, default=None):
+        _cache_eligible = widget is not None  # don't cache transient lookups
         if not widget:
             widget = core.widget.Widget("")
         # special handling
@@ -149,8 +150,8 @@ class Theme(object):
         state = widget._state_cache if hasattr(widget, '_state_cache') else widget.state()
         cache_key = (widget.id, frozenset(state), self.__widget_count)
 
-        # Return cached value if available (list values are excluded — they cycle per-tick)
-        if cache_key in self.__resolved:
+        # Cache check only for explicitly-provided widgets
+        if _cache_eligible and cache_key in self.__resolved:
             cached_entry = self.__resolved[cache_key]
             if key in cached_entry:
                 value = cached_entry[key]
@@ -192,8 +193,7 @@ class Theme(object):
             self.__value_idx["{}::{}".format(widget.id, key)] = idx
             widget.set(key, idx)
             value = value[idx]
-        else:
-            # Store in cache (non-list values only)
+        elif _cache_eligible:
             if cache_key not in self.__resolved:
                 self.__resolved[cache_key] = {}
             self.__resolved[cache_key][key] = value

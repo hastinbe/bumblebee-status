@@ -201,18 +201,34 @@ def _make_mock_widget(widget_id="test-widget", states=None):
     return w
 
 
-def test_cache_hit_returns_same_value():
-    """Cache hit: second call returns cached value without traversing cascade."""
-    theme = core.theme.Theme(raw_data={"defaults": {"fg": "#aabbcc"}})
-    widget = _make_mock_widget(widget_id="w1", states=[])
+def test_cache_hit_skips_cascade(mocker):
+    """Second get() for same (widget, state, count) returns cached value, not re-resolved."""
+    theme = core.theme.Theme(raw_data={"defaults": {"fg": "#original"}})
+    widget = _make_mock_widget("w1", [])
 
-    result1 = theme.get("fg", widget)
-    result2 = theme.get("fg", widget)
+    first = theme.get("fg", widget)
+    assert first == "#original"
 
-    assert result1 == "#aabbcc"
-    assert result2 == "#aabbcc"
-    # widget.id appears in the resolved cache
-    assert any(k[0] == "w1" for k in theme._Theme__resolved)
+    # Mutate the theme data — if cache is bypassed, second call would return "#mutated"
+    theme._Theme__data["defaults"]["fg"] = "#mutated"
+
+    second = theme.get("fg", widget)
+    assert second == "#original"  # still returns cached value
+
+
+def test_list_values_not_cached():
+    """List values (cycling colors) are excluded from the cache."""
+    theme = core.theme.Theme(raw_data={"defaults": {"fg": ["#aaa", "#bbb"]}})
+    widget = _make_mock_widget("w1", [])
+    widget.set = MagicMock()  # list path calls widget.set(key, idx)
+
+    theme.get("fg", widget)
+
+    # List values must not be in __resolved (they cycle per tick)
+    cache = theme._Theme__resolved
+    for cache_key, entry in cache.items():
+        if cache_key[0] == "w1":
+            assert "fg" not in entry
 
 
 def test_cache_different_states_produce_different_entries():
