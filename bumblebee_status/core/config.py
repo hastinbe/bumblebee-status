@@ -210,7 +210,7 @@ class Config(util.store.Store):
 
         self.__args = parser.parse_args(args)
         self.__autohide_set = None
-        self._interval_cache = None
+        self.__interval_cache = None
 
         if self.__args.config_file:
             cfg = self.__args.config_file
@@ -281,9 +281,9 @@ class Config(util.store.Store):
     """
 
     def interval(self, default=1):
-        if self._interval_cache is None:
-            self._interval_cache = util.format.seconds(self.get("interval", default))
-        return self._interval_cache
+        if self.__interval_cache is None:
+            self.__interval_cache = util.format.seconds(self.get("interval", default))
+        return self.__interval_cache
 
     """Returns the global popup menu font size
 

@@ -141,7 +141,7 @@ def test_autohide_set_built_only_once(mocker):
     cfg.autohide("cpu")
     cfg.autohide("memory")
     # aslist should be called at most once across all autohide() calls
-    assert aslist_spy.call_count <= 1
+    assert aslist_spy.call_count == 1
 
 
 def test_interval_cached(mocker):
@@ -151,7 +151,7 @@ def test_interval_cached(mocker):
     cfg.interval()
     cfg.interval()
     # seconds() should be called at most once across all interval() calls
-    assert seconds_spy.call_count <= 1
+    assert seconds_spy.call_count == 1
 
 #
 # vim: tabstop=8 expandtab shiftwidth=4 softtabstop=4
