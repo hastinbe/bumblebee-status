@@ -5,6 +5,7 @@ import core.event
 import core.config
 import core.output
 import core.module
+import util.format
 
 
 class SampleModule(core.module.Module):
@@ -261,6 +262,23 @@ def test_draw_not_skipped_after_update(mocker, i3, module_a):
 
     assert second_call_count > first_call_count, \
         "stdout.write not called after module update"
+
+
+def test_interval_seconds_cached_on_module(mocker, i3, module_a):
+    """util.format.seconds should be called at most once per module across multiple updates."""
+    i3.modules([module_a])
+    seconds_spy = mocker.spy(util.format, "seconds")
+
+    module_a.next_update = 0
+    i3.update(force=True)
+    first_count = seconds_spy.call_count
+
+    module_a.next_update = 0
+    i3.update(force=True)
+    second_count = seconds_spy.call_count
+
+    assert second_count == first_count, \
+        f"util.format.seconds called again on second update: {first_count} -> {second_count}"
 
 
 # vim: tabstop=8 expandtab shiftwidth=4 softtabstop=4

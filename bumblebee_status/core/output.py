@@ -302,9 +302,11 @@ class i3(object):
                 for w in module.widgets():
                     self.__theme.invalidate_widget(w.id)
                 if module.parameter("interval", "") != "never":
-                    module.next_update = now + util.format.seconds(
-                        module.parameter("interval", self.__config.interval())
-                    )
+                    if not hasattr(module, '_interval_secs'):
+                        module._interval_secs = util.format.seconds(
+                            module.parameter("interval", self.__config.interval())
+                        )
+                    module.next_update = now + module._interval_secs
                 else:
                     module.next_update = sys.maxsize
             for widget in module.widgets():
