@@ -162,8 +162,10 @@ class Theme(object):
                 value, self.get(widget.module.id, None, {}).get(key, value), key
             )
 
-        if not key in widget.state():
-            for state in widget.state():
+        # Use cached state if available to avoid repeated widget.state() calls
+        widget_state = getattr(widget, '_state_cache', None) or widget.state()
+        if not key in widget_state:
+            for state in widget_state:
                 theme = self.get(state, widget, {})
                 value = merge_replace(value, theme.get(key, value), key)
 

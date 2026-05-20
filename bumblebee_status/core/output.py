@@ -243,6 +243,11 @@ class i3(object):
 
         width = self.__config.get("output.width", 0)
         for widget in module.widgets():
+            # Cache widget state if not already cached
+            if not hasattr(widget, '_state_cache'):
+                widget._state_cache = widget.state()
+            widget_state = widget._state_cache
+
             if module.scroll() == True and width > 0:
                 self.__widgetcount += 1
                 if self.__widgetcount-1 < self.__offset:
@@ -251,14 +256,14 @@ class i3(object):
                     continue
             if widget.module and self.__config.autohide(widget.module.name):
                 if not any(
-                    state in widget.state() for state in ["warning", "critical", "no-autohide"]
+                    state in widget_state for state in ["warning", "critical", "no-autohide"]
                 ):
                     continue
             if module.hidden():
                 continue
             if widget.hidden:
                 continue
-            if "critical" in widget.state() and self.__config.errorhide(widget.module.name):
+            if "critical" in widget_state and self.__config.errorhide(widget.module.name):
                 continue
             blocks.extend(self.separator_block(module, widget))
             blocks.append(self.__content_block(module, widget))

@@ -199,4 +199,32 @@ def test_pre_suffix(block_a):
     assert block_a.dict()["full_text"] == "*pre*test*suf*"
 
 
+def test_widget_state_cached_on_widget_during_blocks(mocker, i3, module_a):
+    """widget.state() should be called once per widget, cached as _state_cache."""
+    i3.modules([module_a])
+    i3.update()
+
+    widget = module_a.widget()
+    # Clear any existing cache from update()
+    if hasattr(widget, '_state_cache'):
+        delattr(widget, '_state_cache')
+
+    original_state = widget.state
+    call_count = [0]
+
+    def counting_state():
+        call_count[0] += 1
+        return original_state()
+
+    widget.state = counting_state
+
+    # Initialize widgetcount (normally done by statusline())
+    i3._i3__widgetcount = 0
+
+    # Calling blocks() should call state() exactly once per widget
+    i3.blocks(module_a)
+    assert call_count[0] == 1
+    assert hasattr(widget, '_state_cache')
+
+
 # vim: tabstop=8 expandtab shiftwidth=4 softtabstop=4
