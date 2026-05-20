@@ -243,11 +243,7 @@ class i3(object):
 
         width = self.__config.get("output.width", 0)
         for widget in module.widgets():
-            # Refresh cache on each draw cycle
-            _sentinel = object()
-            widget_state = getattr(widget, '_state_cache', _sentinel)
-            if widget_state is _sentinel:
-                widget_state = widget.state()
+            widget_state = widget.state()
             widget._state_cache = widget_state
 
             if module.scroll() == True and width > 0:

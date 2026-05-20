@@ -162,11 +162,7 @@ class Theme(object):
                 value, self.get(widget.module.id, None, {}).get(key, value), key
             )
 
-        # Use cached state if available to avoid repeated widget.state() calls
-        _sentinel = object()
-        state = getattr(widget, '_state_cache', _sentinel)
-        if state is _sentinel:
-            state = widget.state()
+        state = widget._state_cache if hasattr(widget, '_state_cache') else widget.state()
         if not key in state:
             for widget_state_item in state:
                 theme = self.get(widget_state_item, widget, {})
