@@ -163,10 +163,13 @@ class Theme(object):
             )
 
         # Use cached state if available to avoid repeated widget.state() calls
-        widget_state = getattr(widget, '_state_cache', None) or widget.state()
-        if not key in widget_state:
-            for state in widget_state:
-                theme = self.get(state, widget, {})
+        _sentinel = object()
+        state = getattr(widget, '_state_cache', _sentinel)
+        if state is _sentinel:
+            state = widget.state()
+        if not key in state:
+            for widget_state_item in state:
+                theme = self.get(widget_state_item, widget, {})
                 value = merge_replace(value, theme.get(key, value), key)
 
         if not type(value) in (list, dict):
