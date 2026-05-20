@@ -177,23 +177,26 @@ class i3(object):
             if module.widget(widget_id=widget_id) and util.format.asbool(module.parameter("minimize", False)) == True:
                 # this module can customly minimize
                 module.minimized = not module.minimized
+                self.__draw_dirty = True
                 return
 
         if widget_id in self.__content:
             self.__content[widget_id]["minimized"] = not self.__content[widget_id]["minimized"]
+            self.__draw_dirty = True
 
     def draw(self, what, args=None):
         with self.__lock:
             cb = getattr(self, what)
             data = cb(args) if args else cb()
             if "blocks" in data:
-                content_hash = hash(
-                    tuple(v.get("text", "") for v in self.__content.values())
-                )
-                if not self.__draw_dirty and content_hash == self.__last_content_hash:
-                    return
-                self.__draw_dirty = False
-                self.__last_content_hash = content_hash
+                if what == "statusline":
+                    content_hash = hash(
+                        tuple(v.get("text", "") for v in self.__content.values())
+                    )
+                    if not self.__draw_dirty and content_hash == self.__last_content_hash:
+                        return
+                    self.__draw_dirty = False
+                    self.__last_content_hash = content_hash
                 sys.stdout.write(json.dumps(data["blocks"], default=dump_json))
             if "suffix" in data:
                 sys.stdout.write(data["suffix"])
@@ -238,9 +241,11 @@ class i3(object):
     def scroll_left(self):
         if self.__offset > 0:
             self.__offset -= 1
+            self.__draw_dirty = True
 
     def scroll_right(self):
         self.__offset += 1
+        self.__draw_dirty = True
 
     def blocks(self, module):
         blocks = []
@@ -283,7 +288,6 @@ class i3(object):
             self.update2(affected_modules, redraw_only, force)
 
     def update2(self, affected_modules=None, redraw_only=False, force=False):
-        self.__draw_dirty = False
         now = time.time()
         for module in self.__modules:
             if affected_modules and not module.id in affected_modules:
