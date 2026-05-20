@@ -25,6 +25,7 @@ def i3():
 def module_a(mocker):
     widget = mocker.MagicMock()
     widget.full_text.return_value = "test"
+    widget.theme.return_value = None
     widget.id = "a"
     widget.hidden = False
     return SampleModule(config=core.config.Config([]), widgets=[widget, widget, widget])
@@ -226,6 +227,40 @@ def test_widget_state_cached_on_widget_during_blocks(mocker, i3):
     i3.blocks(module)
     assert call_count[0] == 1
     assert hasattr(widget, '_state_cache')
+
+
+def test_draw_skipped_when_content_unchanged(mocker, i3, module_a):
+    """stdout.write should not be called on second draw if nothing changed."""
+    i3.modules([module_a])
+    i3.update()
+
+    stdout = mocker.patch("core.output.sys.stdout")
+    i3.draw("statusline")
+    first_call_count = stdout.write.call_count
+
+    i3.draw("statusline")
+    second_call_count = stdout.write.call_count
+
+    assert second_call_count == first_call_count, \
+        "stdout.write called again despite no content change"
+
+
+def test_draw_not_skipped_after_update(mocker, i3, module_a):
+    """stdout.write should be called again after a module update."""
+    i3.modules([module_a])
+    i3.update()
+
+    stdout = mocker.patch("core.output.sys.stdout")
+    i3.draw("statusline")
+    first_call_count = stdout.write.call_count
+
+    # force=True bypasses the interval check so the module always re-runs
+    i3.update(force=True)
+    i3.draw("statusline")
+    second_call_count = stdout.write.call_count
+
+    assert second_call_count > first_call_count, \
+        "stdout.write not called after module update"
 
 
 # vim: tabstop=8 expandtab shiftwidth=4 softtabstop=4

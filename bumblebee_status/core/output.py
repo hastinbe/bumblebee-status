@@ -147,6 +147,8 @@ class i3(object):
         self.__theme = theme
         self.__config = config
         self.__offset = 0
+        self.__draw_dirty = False
+        self.__last_content_hash = None
         self.__lock = threading.Lock()
         core.event.register("update", self.update)
         core.event.register("start", self.draw, "start")
@@ -185,6 +187,13 @@ class i3(object):
             cb = getattr(self, what)
             data = cb(args) if args else cb()
             if "blocks" in data:
+                content_hash = hash(
+                    tuple(v.get("text", "") for v in self.__content.values())
+                )
+                if not self.__draw_dirty and content_hash == self.__last_content_hash:
+                    return
+                self.__draw_dirty = False
+                self.__last_content_hash = content_hash
                 sys.stdout.write(json.dumps(data["blocks"], default=dump_json))
             if "suffix" in data:
                 sys.stdout.write(data["suffix"])
@@ -274,6 +283,7 @@ class i3(object):
             self.update2(affected_modules, redraw_only, force)
 
     def update2(self, affected_modules=None, redraw_only=False, force=False):
+        self.__draw_dirty = False
         now = time.time()
         for module in self.__modules:
             if affected_modules and not module.id in affected_modules:
@@ -284,6 +294,9 @@ class i3(object):
 
             if not redraw_only:
                 module.update_wrapper()
+                self.__draw_dirty = True
+                for w in module.widgets():
+                    self.__theme.invalidate_widget(w.id)
                 if module.parameter("interval", "") != "never":
                     module.next_update = now + util.format.seconds(
                         module.parameter("interval", self.__config.interval())
